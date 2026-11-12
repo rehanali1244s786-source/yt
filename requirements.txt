@@ -1,0 +1,6 @@
+flask>=3.0
+waitress>=3.0
+gunicorn>=22.0
+yt-dlp[default]
+imageio-ffmpeg
+deno

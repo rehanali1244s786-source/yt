@@ -1,0 +1,3 @@
+# Netscape HTTP Cookie File
+# OPTIONAL. Do NOT commit real cookies. On a public host set the env var
+# YT_COOKIES_B64 (base64 of your cookies.txt) instead of shipping the file.
