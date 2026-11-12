@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex"><title>Admin</title>
+<style nonce="{{ nonce }}">
+:root{--bg:#0b0620;--card:#1a1340;--ink:#f3f0ff;--mut:#a79fc9;--line:rgba(160,140,255,.28);--ok:#35f2a1;--err:#ff6b8b;--p:#7c5cff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px system-ui,sans-serif;padding:16px}
+h1{font-size:1.3rem;margin:0 0 12px}h2{font-size:.85rem;text-transform:uppercase;letter-spacing:.08em;color:var(--mut);margin:20px 0 8px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.c{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}.c b{display:block;font-size:1.15rem}.c span{color:var(--mut);font-size:.75rem}
+table{width:100%;border-collapse:collapse;font-size:.8rem}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--mut)}
+td.w{overflow-wrap:anywhere}
+button,input{font:inherit;padding:8px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink)}button{cursor:pointer;background:var(--p);border:0}
+button.s{padding:3px 8px;font-size:.75rem;background:#2b2260}.ok{color:var(--ok)}.bad{color:var(--err)}
+.wrap{overflow-x:auto}#login{display:flex;gap:8px;max-width:360px}
+</style></head><body>
+<h1>Admin</h1>
+<div id="login"><input id="code" type="password" placeholder="Admin code"><button id="lb">Sign in</button></div>
+<div id="main" hidden>
+  <div class="grid" id="cards"></div>
+  <h2>yt-dlp</h2>
+  <div class="c"><span id="upd"></span><br><button id="upBtn" style="margin-top:8px">Update yt-dlp &amp; reload</button></div>
+  <h2>Jobs</h2><div class="wrap"><table><thead><tr><th>Job</th><th>User</th><th>Status</th><th>Progress</th><th>Files</th><th>Size</th><th>Age</th><th></th></tr></thead><tbody id="jobs"></tbody></table></div>
+  <h2>Recent errors</h2><div class="wrap"><table><thead><tr><th>When</th><th>Job</th><th>Video</th><th>Error</th></tr></thead><tbody id="errs"></tbody></table></div>
+  <h2>Usage today</h2><div id="usage" class="c"></div>
+</div>
+<script nonce="{{ nonce }}">
+const $=id=>document.getElementById(id);let tok="";try{tok=sessionStorage.getItem("atok")||""}catch(e){}
+const esc=t=>String(t).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const sz=b=>!b?"0":b>=1073741824?(b/1073741824).toFixed(2)+" GB":(b/1048576).toFixed(1)+" MB";
+const ago=s=>s>=3600?Math.floor(s/3600)+"h":s>=60?Math.floor(s/60)+"m":s+"s";
+async function call(p,m){const r=await fetch(p,{method:m||"GET",headers:{"X-Token":tok}});if(r.status===401||r.status===403){tok="";$("main").hidden=true;$("login").hidden=false;throw new Error("auth")}return r.json()}
+async function login(){const r=await fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code:$("code").value})});const d=await r.json();
+  if(!r.ok){alert(d.error);return}tok=d.token;try{sessionStorage.setItem("atok",tok)}catch(e){}$("code").value="";refresh()}
+async function refresh(){
+  let d;try{d=await call("/api/admin/stats")}catch(e){return}
+  $("login").hidden=true;$("main").hidden=false;
+  const card=(a,b)=>`<div class="c"><b>${esc(a)}</b><span>${esc(b)}</span></div>`;
+  $("cards").innerHTML=card(d.active,"active jobs")+card(ago(d.uptime),"uptime")+card(sz(d.downloads_bytes)+" / "+sz(d.disk_limit),"downloads / limit")+
+    card(d.disk.free?sz(d.disk.free):"?","disk free")+card(d.ytdlp_running,"yt-dlp running")+card(d.ytdlp_installed,"yt-dlp installed")+
+    card(["ffmpeg","aria2","deno","cookies","proxy","po_token"].map(k=>k+":"+(d[k]?"✓":"–")).join(" "),"tools")+
+    card(`${d.limits.parallel}/${d.limits.global} · jobs ${d.limits.jobs}+${d.limits.queue}`,"parallel / global · jobs+queue");
+  $("upd").textContent="Status: "+d.update.status+(d.update.log?" — "+d.update.log.slice(-160):"")+(d.gunicorn?"":" (not under gunicorn: restart manually to apply)");
+  $("jobs").innerHTML=d.jobs.map(j=>`<tr><td class="w">${esc(j.short)}<br><small>${esc(j.label)}</small></td><td>${esc(j.user)}<br><small>${esc(j.ip)}</small></td><td>${esc(j.status)}${j.paused?" ⏸":""}</td><td>${Math.floor(j.percent)}% (${j.settled}/${j.total}${j.failed?", "+j.failed+" failed":""})</td><td>${j.files}</td><td>${sz(j.bytes)}</td><td>${ago(j.age)}</td><td><button class="s" data-a="cancel" data-id="${j.id}">Cancel</button> <button class="s" data-a="delete" data-id="${j.id}">Delete</button></td></tr>`).join("")||"<tr><td colspan=8>No jobs</td></tr>";
+  $("errs").innerHTML=d.errors.map(e=>`<tr><td>${new Date(e.t*1000).toLocaleTimeString()}</td><td>${esc(e.job)}</td><td class="w">${esc(e.title)}</td><td class="w bad">${esc(e.raw||e.error)}</td></tr>`).join("")||"<tr><td colspan=4>None 🎉</td></tr>";
+  $("usage").textContent=Object.keys(d.usage).length?Object.entries(d.usage).map(([u,b])=>u+": "+sz(b)+(d.daily_limit?" / "+sz(d.daily_limit):"")).join("   "):"No downloads yet today.";
+}
+$("lb").onclick=login;$("code").onkeydown=e=>{if(e.key==="Enter")login()};
+$("upBtn").onclick=async()=>{if(confirm("Update yt-dlp and reload? Running jobs pause and resume automatically.")){await call("/api/admin/update","POST");refresh()}};
+$("jobs").onclick=async e=>{const b=e.target.closest("button[data-id]");if(!b)return;if(b.dataset.a==="delete"&&!confirm("Delete this job and its files?"))return;await call("/api/admin/job/"+b.dataset.id+"/"+b.dataset.a,"POST");refresh()};
+refresh();setInterval(()=>{if(tok)refresh()},3000);
+</script></body></html>

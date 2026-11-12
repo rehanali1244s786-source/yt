@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0620">
+<title>3D Video Downloader</title>
+<style nonce="{{ nonce }}">
+  :root{
+    --bg1:#0b0620; --bg2:#1a0b3d; --ink:#f3f0ff; --muted:#a79fc9;
+    --glass:rgba(28,18,66,.55); --line:rgba(160,140,255,.28);
+    --p1:#7c5cff; --p2:#00d9ff; --p3:#ff4fd8; --ok:#35f2a1; --err:#ff6b8b;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    margin:0; color:var(--ink); overflow-x:hidden;
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    background:radial-gradient(1200px 700px at 20% -10%,#3a1c8f55,transparent 60%),
+               radial-gradient(900px 600px at 100% 10%,#00b8ff33,transparent 60%),
+               linear-gradient(160deg,var(--bg1),var(--bg2));
+    background-attachment:fixed;
+  }
+
+  /* ---------- 3D background ---------- */
+  .scene{position:fixed;inset:0;perspective:900px;overflow:hidden;pointer-events:none;z-index:0}
+  .orb{position:absolute;border-radius:50%;filter:blur(60px);opacity:.55;animation:drift 30s ease-in-out infinite alternate}
+  .orb.a{width:340px;height:340px;background:var(--p1);left:-90px;top:8%}
+  .orb.b{width:300px;height:300px;background:var(--p2);right:-80px;top:35%;animation-delay:-5s}
+  .orb.c{width:260px;height:260px;background:var(--p3);left:30%;bottom:-120px;animation-delay:-9s}
+  @keyframes drift{to{transform:translate3d(20px,-24px,0) scale(1.06)}}
+
+  .floor{
+    position:absolute;left:-60%;right:-60%;bottom:-8%;height:62vh;
+    transform:rotateX(72deg);transform-origin:50% 100%;
+    background-image:
+      linear-gradient(rgba(124,92,255,.55) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(0,217,255,.45) 1px,transparent 1px);
+    background-size:56px 56px; opacity:.35;
+    -webkit-mask-image:linear-gradient(to top,#000 10%,transparent 85%);
+            mask-image:linear-gradient(to top,#000 10%,transparent 85%);
+  }
+  @keyframes grid{to{background-position:0 56px,56px 0}}
+
+  .cube{position:absolute;transform-style:preserve-3d;animation:spin var(--d,40s) linear infinite}
+  .cube i{position:absolute;inset:0;border:1px solid rgba(255,255,255,.35);
+    background:linear-gradient(135deg,rgba(124,92,255,.38),rgba(0,217,255,.18));
+    box-shadow:inset 0 0 18px rgba(255,255,255,.12),0 0 20px rgba(124,92,255,.25)}
+  .cube i:nth-child(1){transform:translateZ(calc(var(--s)/2))}
+  .cube i:nth-child(2){transform:rotateY(180deg) translateZ(calc(var(--s)/2))}
+  .cube i:nth-child(3){transform:rotateY(90deg) translateZ(calc(var(--s)/2))}
+  .cube i:nth-child(4){transform:rotateY(-90deg) translateZ(calc(var(--s)/2))}
+  .cube i:nth-child(5){transform:rotateX(90deg) translateZ(calc(var(--s)/2))}
+  .cube i:nth-child(6){transform:rotateX(-90deg) translateZ(calc(var(--s)/2))}
+  @keyframes spin{from{transform:rotateX(0) rotateY(0) rotateZ(0)}to{transform:rotateX(360deg) rotateY(720deg) rotateZ(180deg)}}
+  @keyframes bob{from{translate:0 -14px}to{translate:0 18px}}
+
+  /* ---------- layout ---------- */
+  main{position:relative;z-index:1;min-height:100%;display:grid;place-items:center;padding:28px 16px 40px}
+  .stage{width:100%;max-width:560px;perspective:1100px}
+  .card{
+    position:relative;transform-style:preserve-3d;
+    
+    background:var(--glass);border:1px solid var(--line);border-radius:26px;padding:26px 22px 22px;
+    -webkit-backdrop-filter:blur(18px) saturate(140%);backdrop-filter:blur(18px) saturate(140%);
+    box-shadow:0 40px 80px -20px rgba(0,0,0,.65),0 0 0 1px rgba(255,255,255,.04) inset,0 0 60px rgba(124,92,255,.18);
+    animation:enter .5s ease-out both;
+  }
+  .card::before{ /* animated neon border */
+    content:"";position:absolute;inset:-1px;border-radius:27px;padding:1.5px;z-index:-1;
+    background:conic-gradient(from var(--ang,0deg),var(--p1),var(--p2),var(--p3),var(--p1));
+    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+    -webkit-mask-composite:xor;mask-composite:exclude;opacity:.6}
+  @property --ang{syntax:"<angle>";inherits:false;initial-value:0deg}
+  @keyframes ang{to{--ang:360deg}}
+  @keyframes enter{from{opacity:0;transform:translateY(16px)}}
+
+  header{display:flex;align-items:center;gap:18px;transform:translateZ(40px)}
+  .logo{width:58px;height:58px;perspective:300px;flex:none}
+  .logo .cube{--s:44px;position:relative;left:7px;top:7px;width:44px;height:44px;animation:spin 24s linear infinite;translate:none}
+  .logo .cube i{display:grid;place-items:center;font-size:18px;color:#fff;
+    background:linear-gradient(135deg,var(--p1),var(--p2));border-color:rgba(255,255,255,.5)}
+  body.busy .logo .cube{animation-duration:8s}
+  h1{margin:0;font-size:clamp(1.55rem,6.4vw,2.1rem);line-height:1.05;font-weight:850;letter-spacing:-.02em;
+     background:linear-gradient(90deg,#fff,#c9b8ff 45%,var(--p2));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .lead{margin:4px 0 0;color:var(--muted);font-size:.93rem}
+
+  .stack{margin-top:22px;display:grid;gap:16px;transform:translateZ(22px)}
+  label.t{display:block;margin:0 0 7px;font-weight:700;font-size:.82rem;letter-spacing:.06em;text-transform:uppercase;color:#cfc4ff}
+  input[type=url],input[type=password],input[type=number],input[type=text],select{
+    width:100%;padding:14px 15px;font:inherit;font-size:1rem;color:var(--ink);
+    background:rgba(8,4,28,.55);border:1px solid var(--line);border-radius:14px;outline:0;
+    transition:border-color .2s,box-shadow .2s,transform .2s}
+  input::placeholder{color:#7f76a8}
+  input:focus,select:focus{border-color:var(--p2);box-shadow:0 0 0 4px rgba(0,217,255,.16),0 0 24px rgba(0,217,255,.25);transform:translateZ(10px) translateY(-1px)}
+  select option{background:#1a0b3d}
+  .row{display:flex;gap:12px}.row>*{flex:1;min-width:0}
+
+  .seg{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:5px;border-radius:16px;background:rgba(8,4,28,.55);border:1px solid var(--line);position:relative}
+  .seg input{position:absolute;opacity:0;pointer-events:none}
+  .seg label{display:grid;place-items:center;padding:11px 4px;font-size:.9rem;border-radius:12px;font-weight:700;cursor:pointer;color:var(--muted);transition:.25s;position:relative;z-index:1}
+  .seg input:checked+label{color:#fff;background:linear-gradient(135deg,var(--p1),#5a8bff);box-shadow:0 8px 20px -6px var(--p1)}
+  .seg input:focus-visible+label{outline:2px solid var(--p2);outline-offset:2px}
+
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chips input{position:absolute;opacity:0;pointer-events:none}
+  .chips label{padding:9px 14px;border-radius:99px;border:1px solid var(--line);background:rgba(8,4,28,.55);font-weight:700;font-size:.9rem;color:var(--muted);cursor:pointer;transition:.2s}
+  .chips label:hover{transform:translateY(-2px) translateZ(8px);border-color:var(--p2)}
+  .chips input:checked+label{color:#06121c;background:linear-gradient(135deg,var(--p2),#7bf0ff);border-color:transparent;box-shadow:0 8px 20px -6px var(--p2)}
+  .chips input:focus-visible+label{outline:2px solid #fff;outline-offset:2px}
+  .chips.off{opacity:.35;pointer-events:none}
+
+  details{border:1px dashed var(--line);border-radius:14px;padding:12px 14px}
+  summary{cursor:pointer;font-weight:700;color:#cfc4ff;list-style:none}
+  summary::-webkit-details-marker{display:none}
+  summary::before{content:"▸ ";display:inline-block;transition:transform .2s}
+  details[open] summary::before{transform:rotate(90deg)}
+  details .in{margin-top:14px;display:grid;gap:14px}
+  .check{display:flex;gap:10px;align-items:center;font-weight:500;cursor:pointer}
+  .check input{width:20px;height:20px;accent-color:var(--p2)}
+
+  /* 3D button */
+  .go{
+    position:relative;width:100%;border:0;cursor:pointer;font:inherit;font-weight:800;font-size:1.1rem;letter-spacing:.02em;color:#fff;
+    padding:17px 20px;border-radius:16px;overflow:hidden;
+    background:linear-gradient(135deg,var(--p1),var(--p3));
+    box-shadow:0 6px 0 #3b2aa8,0 18px 30px -8px rgba(124,92,255,.7);
+    transform:translateZ(30px);transition:transform .12s,box-shadow .12s,filter .2s}
+  .go::after{content:"";position:absolute;top:0;bottom:0;width:60px;left:-90px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.5),transparent);transform:skewX(-20deg);display:none}
+  @keyframes shine{0%,55%{left:-90px}100%{left:120%}}
+  .go:hover{filter:brightness(1.1);transform:translateZ(30px) translateY(-2px)}
+  .go:active{transform:translateZ(30px) translateY(5px);box-shadow:0 1px 0 #3b2aa8,0 8px 16px -8px rgba(124,92,255,.7)}
+  .go:disabled{filter:grayscale(.5) brightness(.8);cursor:not-allowed}
+  :focus-visible{outline:3px solid var(--p2);outline-offset:3px}
+
+  /* ---------- progress panel ---------- */
+  .progress{display:none;transform:translateZ(34px);padding:18px 16px 16px;border-radius:20px;
+    background:linear-gradient(160deg,rgba(124,92,255,.16),rgba(0,217,255,.08));border:1px solid var(--line)}
+  .progress.show{display:block;animation:enter .3s ease-out}
+  @keyframes pop{from{opacity:0;transform:translateZ(34px) scale(.9) rotateX(18deg)}}
+  .pct{display:flex;align-items:baseline;justify-content:center;gap:2px;font-weight:900;line-height:1;
+       font-size:clamp(3.6rem,19vw,5.2rem);font-variant-numeric:tabular-nums;letter-spacing:-.04em;
+       background:linear-gradient(180deg,#fff,var(--p2) 60%,var(--p1));-webkit-background-clip:text;background-clip:text;color:transparent;
+       filter:drop-shadow(0 8px 22px rgba(0,217,255,.35))}
+  .pct small{font-size:.38em;font-weight:800;letter-spacing:0;align-self:flex-start;margin-top:.35em;opacity:.9}
+  .state{text-align:center;margin:8px 0 14px;font-weight:700;color:#d9d0ff;min-height:1.4em}
+  .bar{position:relative;height:22px;border-radius:99px;background:rgba(5,2,20,.7);border:1px solid var(--line);
+       box-shadow:inset 0 3px 8px rgba(0,0,0,.6);overflow:visible}
+  .bar .fill{position:absolute;left:0;top:0;bottom:0;width:0;border-radius:99px;
+       background:linear-gradient(90deg,var(--p1),var(--p2) 70%,var(--ok));background-size:200% 100%;
+       box-shadow:0 0 22px rgba(0,217,255,.65),inset 0 2px 0 rgba(255,255,255,.35);
+       transition:width .35s cubic-bezier(.2,.8,.2,1);overflow:hidden}
+  .bar .fill::after{content:"";position:absolute;inset:0;
+       background:repeating-linear-gradient(115deg,rgba(255,255,255,.28) 0 12px,transparent 12px 24px);
+       animation:stripes 2s linear infinite}
+  @keyframes stripes{to{background-position:24px 0}}
+  .bar .head{position:absolute;top:50%;width:30px;height:30px;margin:-15px 0 0 -15px;left:0;border-radius:50%;
+       background:radial-gradient(circle,#fff 0 22%,var(--p2) 45%,transparent 70%);filter:blur(.5px);
+       transition:left .35s cubic-bezier(.2,.8,.2,1);}
+  @keyframes pulse{to{transform:scale(1.35);opacity:.7}}
+  .progress.done .fill::after,.progress.done .head,.progress.err .fill::after,.progress.err .head{display:none}
+  .progress.done .fill{background:linear-gradient(90deg,var(--p2),var(--ok))}
+  .progress.err .fill{background:linear-gradient(90deg,#ff4f6d,#ff9b5f);box-shadow:0 0 22px rgba(255,79,109,.6)}
+  .ticks{display:flex;justify-content:space-between;margin-top:7px;font-size:.72rem;color:var(--muted);font-variant-numeric:tabular-nums}
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}
+  .stat{padding:10px 6px;text-align:center;border-radius:14px;background:rgba(8,4,28,.55);border:1px solid var(--line);transform:translateZ(8px)}
+  .stat b{display:block;font-size:1.02rem;font-variant-numeric:tabular-nums}
+  .stat span{font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+  .title{margin-top:12px;text-align:center;color:var(--muted);font-size:.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .err-msg{margin-top:12px;text-align:center;color:var(--err);font-weight:600;overflow-wrap:anywhere}
+  .actions{display:flex;gap:10px;margin-top:14px}
+  .btn2{flex:1;padding:13px;border-radius:14px;border:1px solid var(--line);background:rgba(8,4,28,.55);color:var(--ink);font:inherit;font-weight:700;cursor:pointer;text-decoration:none;text-align:center;transition:.2s}
+  .btn2:hover{border-color:var(--p2);transform:translateY(-2px)}
+  .btn2.main{border:0;color:#04140e;background:linear-gradient(135deg,var(--ok),#9bffd6);box-shadow:0 6px 0 #14996a,0 14px 24px -8px rgba(53,242,161,.6)}
+  .btn2.main:active{transform:translateY(4px);box-shadow:0 2px 0 #14996a}
+  .files{margin-top:14px;border:1px solid var(--line);border-radius:14px;background:rgba(8,4,28,.55);padding:10px 12px}
+  .files h4{margin:0 0 8px;font-size:.78rem;letter-spacing:.08em;text-transform:uppercase;color:#cfc4ff}
+  #flist{list-style:none;margin:0;padding:0;max-height:210px;overflow:auto;display:grid;gap:2px}
+  #flist li{display:flex;gap:10px;justify-content:space-between;font-size:.82rem;padding:5px 2px;border-bottom:1px solid rgba(160,140,255,.12)}
+  #flist a{color:var(--ink);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  #flist a:hover{color:var(--p2)}
+  #flist span{color:var(--muted);flex:none;font-variant-numeric:tabular-nums}
+  .parts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+  .parts a{flex:1 1 140px;padding:10px;border-radius:12px;text-align:center;text-decoration:none;font-weight:700;font-size:.85rem;color:#04140e;background:linear-gradient(135deg,var(--ok),#9bffd6)}
+  .warn{margin-top:10px;font-size:.82rem;color:#ffd27a;text-align:center;overflow-wrap:anywhere}
+  #failBox{margin-top:10px;font-size:.8rem}
+  #failBox li{margin:4px 0;color:var(--err);overflow-wrap:anywhere}
+  #pv{margin-top:6px}
+  #pvList{list-style:none;margin:8px 0;padding:0;max-height:260px;overflow:auto}
+  #pvList li{border-bottom:1px solid rgba(160,140,255,.12)}
+  #pvList label{display:flex;gap:10px;align-items:center;padding:6px 2px;font-size:.85rem;cursor:pointer}
+  #pvList label span.n{color:var(--muted);flex:none;min-width:2.2em;text-align:right;font-variant-numeric:tabular-nums}
+  #pvList label span.t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #pvList label span.d{color:var(--muted);flex:none;font-variant-numeric:tabular-nums}
+  #pvList input{width:18px;height:18px;accent-color:var(--p2);flex:none}
+  .pvbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:.82rem;color:var(--muted)}
+  .pvbar button{padding:7px 12px;font-size:.8rem;flex:none}
+  .mine{display:grid;gap:6px}
+  .mine button{display:flex;justify-content:space-between;gap:10px;text-align:left;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:rgba(8,4,28,.55);color:var(--ink);font:inherit;font-size:.85rem;cursor:pointer}
+  .mine button:hover{border-color:var(--p2)}
+  .mine span{color:var(--muted);flex:none}
+  .mine b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+  .help{margin-top:10px;padding:10px 12px;border-radius:12px;border:1px solid rgba(255,107,139,.4);background:rgba(255,107,139,.08);font-size:.82rem;color:#ffc2cf}
+  [hidden]{display:none !important}
+  .note{margin:18px 4px 0;color:var(--muted);font-size:.8rem;line-height:1.5;text-align:center;transform:translateZ(10px)}
+  #fx{position:fixed;inset:0;z-index:5;pointer-events:none}
+
+  @media (prefers-reduced-motion:reduce){
+    *,*::before,*::after{animation-duration:.001s !important;animation-iteration-count:1 !important;transition-duration:.001s !important}
+  }
+</style>
+</head>
+<body>
+<div class="scene" id="scene" aria-hidden="true">
+  <div class="orb a"></div><div class="orb b"></div><div class="orb c"></div>
+  <div class="floor"></div>
+</div>
+<canvas id="fx" aria-hidden="true"></canvas>
+
+<main>
+  <div class="stage">
+    <div class="card" id="card">
+      <header>
+        <div class="logo" aria-hidden="true">
+          <div class="cube"><i>▶</i><i>▶</i><i></i><i></i><i></i><i></i></div>
+        </div>
+        <div>
+          <h1>3D Video Downloader</h1>
+          <p class="lead">Paste a link. Watch it fly in at full speed.</p>
+        </div>
+      </header>
+
+      <div class="stack" id="form">
+        {% if needs_code %}
+        <div id="codeBox">
+          <label class="t" for="code">Access code</label>
+          <input id="code" type="password" autocomplete="off" placeholder="••••••">
+        </div>
+        {% endif %}
+
+        <div>
+          <label class="t" for="url">YouTube link</label>
+          <input id="url" type="url" inputmode="url" placeholder="https://www.youtube.com/watch?v=..." autocomplete="off">
+        </div>
+
+        <div>
+          <label class="t">Format</label>
+          <div class="seg">
+            <input type="radio" name="fmt" id="f-mp4" value="mp4" checked><label for="f-mp4">🎬 MP4</label>
+            <input type="radio" name="fmt" id="f-mp3" value="mp3"><label for="f-mp3">🎧 MP3</label>
+            <input type="radio" name="fmt" id="f-m4a" value="m4a"><label for="f-m4a">🎵 M4A</label>
+            <input type="radio" name="fmt" id="f-opus" value="opus"><label for="f-opus">🔊 Opus</label>
+          </div>
+        </div>
+
+        <div>
+          <label class="t">Quality</label>
+          <div class="chips" id="quality">
+            <input type="radio" name="q" id="q1" value="360"><label for="q1">360p</label>
+            <input type="radio" name="q" id="q2" value="480"><label for="q2">480p</label>
+            <input type="radio" name="q" id="q3" value="720" checked><label for="q3">720p</label>
+            <input type="radio" name="q" id="q4" value="1080"><label for="q4">1080p</label>
+            <input type="radio" name="q" id="q5" value="best"><label for="q5">Best</label>
+          </div>
+        </div>
+
+        <details>
+          <summary>Playlist options</summary>
+          <div class="in">
+            <label class="check"><input type="checkbox" id="zipall" checked> If it's a playlist, download all videos as one .zip</label>
+            <div class="row">
+              <div><label class="t" for="from">From video #</label><input id="from" type="number" min="1" placeholder="1"></div>
+              <div><label class="t" for="to">To video #</label><input id="to" type="number" min="1" placeholder="last"></div>
+            </div>
+            <button class="btn2" id="preview" type="button">🔍 Preview &amp; choose videos</button>
+            <div class="files" id="pv" hidden>
+              <h4 id="pvTitle">Playlist</h4>
+              <div class="pvbar"><button class="btn2" id="pvAll" type="button">All</button><button class="btn2" id="pvNone" type="button">None</button><span id="pvCount"></span></div>
+              <ul id="pvList"></ul>
+              <button class="btn2 main" id="pvGo" type="button">⬇ Download selected</button>
+            </div>
+          </div>
+        </details>
+
+        <details>
+          <summary>More options</summary>
+          <div class="in">
+            <label class="check"><input type="checkbox" id="embed"> Embed cover art &amp; tags (MP3 / M4A / Opus)</label>
+            <label class="check"><input type="checkbox" id="chapters"> Split into files by chapters (if the video has them)</label>
+            <label class="check"><input type="checkbox" id="subs"> Also download subtitles (.srt)</label>
+            <div id="subsRow" hidden><label class="t" for="subLang">Subtitle languages</label><input id="subLang" type="text" value="en" placeholder="en, es, ur" autocomplete="off"></div>
+          </div>
+        </details>
+
+        <details id="mine" hidden>
+          <summary>My downloads</summary>
+          <div class="in"><div class="mine" id="mineList"></div></div>
+        </details>
+
+        <button class="go" id="go" type="button">▶ Start Download</button>
+      </div>
+
+      <section class="progress" id="prog" aria-live="polite">
+        <div class="pct"><span id="pctNum">0</span><small>%</small></div>
+        <div class="state" id="state">Starting…</div>
+        <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="barA">
+          <div class="fill" id="fill"></div><div class="head" id="head"></div>
+        </div>
+        <div class="ticks"><span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span></div>
+        <div class="stats">
+          <div class="stat"><b id="sSpeed">—</b><span>Speed</span></div>
+          <div class="stat"><b id="sEta">—</b><span>Time left</span></div>
+          <div class="stat"><b id="sCount">—</b><span>Videos</span></div>
+        </div>
+        <div class="title" id="title"></div>
+        <div class="warn" id="note" hidden></div>
+        <div class="files" id="files" hidden>
+          <h4>Ready files (<span id="fcount">0</span>)<span id="fhint"> — download while the rest continues</span></h4>
+          <ul id="flist"></ul>
+          <div class="parts" id="parts"></div>
+        </div>
+        <details id="failBox" hidden><summary id="failSum">Failed videos</summary><ul id="failList"></ul></details>
+        <div class="help" id="help" hidden></div>
+        <div class="err-msg" id="errMsg" hidden></div>
+        <div class="actions">
+          <button class="btn2" id="pause" type="button">⏸ Pause</button>
+          <button class="btn2" id="cancel" type="button">Cancel</button>
+          <button class="btn2" id="retry" type="button" hidden>↻ Retry</button>
+          <a class="btn2 main" id="save" href="#" hidden>⬇ Download Now</a>
+          <button class="btn2" id="again" type="button" hidden>New download</button>
+        </div>
+      </section>
+    </div>
+    <p class="note">Only download videos you own or have permission to download. Big playlists: files become available one by one, and if you close this page you can reopen it to continue (jobs are kept for a while). Up to {{ max_playlist if max_playlist < 100000 else "unlimited" }} videos per job.
+      {% if daily_gb %}<br>Daily limit: {{ '%g'|format(daily_gb) }} GB per user.{% endif %}{% if not ffmpeg %}<br><b>Note:</b> ffmpeg is not installed, so only ready-made video+audio formats are available and audio conversion is off.{% endif %}</p>
+  </div>
+</main>
+
+<script nonce="{{ nonce }}">
+const $ = id => document.getElementById(id);
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* ---------- floating 3D cubes ---------- */
+(function(){
+  const scene = $("scene"); const n = innerWidth < 600 ? 2 : 4;
+  for (let i = 0; i < n; i++) {
+    const s = 30 + Math.random() * 30, c = document.createElement("div");
+    c.className = "cube";
+    c.style.cssText = `--s:${s}px;width:${s}px;height:${s}px;left:${Math.random()*92}%;top:${Math.random()*80}%;` +
+      `--d:${40 + Math.random()*30}s;opacity:${.25 + Math.random()*.2};animation-delay:${-Math.random()*10}s`;
+    c.innerHTML = "<i></i><i></i><i></i><i></i><i></i><i></i>";
+    scene.appendChild(c);
+  }
+})();
+
+/* ---------- helpers ---------- */
+const fmtSpeed = b => !b ? "—" : b >= 1048576 ? (b/1048576).toFixed(1) + " MB/s" : Math.round(b/1024) + " KB/s";
+const fmtEta = s => s == null ? "—" : s >= 3600 ? Math.floor(s/3600) + "h " + Math.floor(s%3600/60) + "m" : s >= 60 ? Math.floor(s/60) + "m " + (s%60) + "s" : s + "s";
+const fmtSize = b => b >= 1073741824 ? (b/1073741824).toFixed(2) + " GB" : (b/1048576).toFixed(1) + " MB";
+const STATE = {
+  queued: "Waiting for a free slot…", checking: "Analyzing link…", downloading: "Preparing your file",
+  processing: "Merging & finishing…", packing: "Packing ZIP…", done: "Ready! Grab your files below 🎉", error: "Failed"
+};
+
+const NEEDS_CODE = {{ 'true' if needs_code else 'false' }};
+const MAX_PL = {{ max_playlist if max_playlist < 100000 else 0 }};
+const fmtDur = s => !s ? "" : (s >= 3600 ? Math.floor(s/3600) + ":" + String(Math.floor(s%3600/60)).padStart(2,"0") : Math.floor(s/60)) + ":" + String(Math.floor(s%60)).padStart(2,"0");
+const cur = n => document.querySelector(`input[name="${n}"]:checked`).value;
+
+/* quality chips only matter for MP4 */
+document.querySelectorAll('input[name="fmt"]').forEach(r => r.addEventListener("change", () =>
+  $("quality").classList.toggle("off", cur("fmt") !== "mp4")));
+$("subs").addEventListener("change", () => { $("subsRow").hidden = !$("subs").checked; });
+
+/* ---------- api helper + login token (the access code itself is never stored) ---------- */
+let token = ""; try { token = localStorage.getItem("tok") || ""; } catch (e) {}
+function showCode(on) { if ($("codeBox")) $("codeBox").hidden = !on; }
+showCode(NEEDS_CODE && !token);
+async function api(path, opt = {}) {
+  opt.headers = Object.assign({}, opt.headers, token ? {"X-Token": token} : {});
+  if (opt.json) { opt.method = opt.method || "POST"; opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(opt.json); }
+  const r = await fetch(path, opt); let d = {}; try { d = await r.json(); } catch (e) {}
+  if (r.status === 401 && d.auth) {
+    token = ""; try { localStorage.removeItem("tok"); } catch (e) {}
+    showCode(true); throw new Error("Session expired - enter the access code again.");
+  }
+  return {r, d};
+}
+async function ensureLogin() {
+  if (!NEEDS_CODE || token) return;
+  const code = $("code").value;
+  if (!code) { $("code").focus(); throw new Error("Enter the access code."); }
+  const {r, d} = await api("/api/login", {json: {code}});
+  if (!r.ok) throw new Error(d.error || "Wrong access code.");
+  token = d.token; try { localStorage.setItem("tok", token); } catch (e) {}
+  $("code").value = ""; showCode(false);
+}
+
+/* ---------- smooth, real percent display ---------- */
+let target = 0, shown = 0, raf = null;
+function paint() {
+  shown += (target - shown) * 0.18;
+  if (Math.abs(target - shown) < 0.05) shown = target;
+  const p = Math.min(100, shown);
+  const whole = target >= 100 && p >= 99.95 ? 100 : Math.floor(p);
+  $("pctNum").textContent = whole;
+  $("fill").style.width = p + "%";
+  $("head").style.left = p + "%";
+  $("barA").setAttribute("aria-valuenow", whole);
+  raf = shown === target ? null : requestAnimationFrame(paint);
+}
+function setPct(v) { target = Math.max(0, Math.min(100, v)); if (!raf) raf = requestAnimationFrame(paint); }
+
+/* ---------- confetti ---------- */
+function confetti() {
+  if (reduce) return;
+  const cv = $("fx"), ctx = cv.getContext("2d"); cv.width = innerWidth; cv.height = innerHeight;
+  const cols = ["#7c5cff","#00d9ff","#ff4fd8","#35f2a1","#fff"];
+  const ps = Array.from({length: 140}, () => ({
+    x: innerWidth/2, y: innerHeight*.45, vx: (Math.random()-.5)*16, vy: -Math.random()*14-4,
+    s: 5+Math.random()*7, r: Math.random()*6, vr: (Math.random()-.5)*.4, c: cols[Math.random()*cols.length|0]}));
+  let t = 0;
+  (function f(){
+    ctx.clearRect(0,0,cv.width,cv.height);
+    ps.forEach(p => { p.vy += .35; p.x += p.vx; p.y += p.vy; p.r += p.vr;
+      ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.r); ctx.fillStyle = p.c; ctx.fillRect(-p.s/2,-p.s/4,p.s,p.s/2); ctx.restore(); });
+    if (++t < 110) requestAnimationFrame(f); else ctx.clearRect(0,0,cv.width,cv.height);
+  })();
+}
+
+/* ---------- main flow ---------- */
+let job = null, timer = null, finished = false, seen = 0, partsShown = 0, partSize = 50;
+const esc = t => String(t).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+function showForm(on) {
+  $("form").hidden = !on;
+  $("prog").classList.toggle("show", !on);
+  document.body.classList.toggle("busy", !on);
+  if (on) loadMine();
+}
+function stop() { clearInterval(timer); timer = null; }
+function resetFiles() {
+  seen = 0; partsShown = 0;
+  $("flist").innerHTML = ""; $("parts").innerHTML = ""; $("files").hidden = true;
+  $("fcount").textContent = "0"; $("failBox").hidden = true; $("note").hidden = true; $("help").hidden = true;
+}
+function renderParts(d) {
+  partSize = d.part_size || partSize;
+  const fin = d.status === "done" || d.status === "error";
+  if (d.nfiles <= partSize) {
+    $("parts").innerHTML = (fin && d.nfiles >= 1 && (d.nfiles > 1 || d.total > 1)) ? `<a href="/zip/${job}" download>⬇ Download all as ZIP (${d.nfiles})</a>` : "";
+    partsShown = 0; return;
+  }
+  const n = fin ? Math.ceil(d.nfiles / partSize) : Math.floor(d.nfiles / partSize);
+  if (n === partsShown) return;
+  partsShown = n;
+  let h = "";
+  for (let k = 1; k <= n; k++) {
+    const a = (k - 1) * partSize + 1, b = Math.min(k * partSize, d.nfiles);
+    h += `<a href="/zip/${job}?part=${k}" download>⬇ ZIP part ${k} <small>(${a}–${b})</small></a>`;
+  }
+  $("parts").innerHTML = h;
+}
+
+async function tick() {
+  let d;
+  try {
+    const r = await fetch("/api/progress/" + job + "?since=" + seen); d = await r.json();
+    if (!r.ok && !d.error) throw new Error("bad");
+  } catch (e) { $("state").textContent = "Reconnecting…"; return; }
+  if (d.status === "error" && /not found/i.test(d.error || "")) forgetJob(job);
+
+  setPct(d.percent || 0);
+  const fin = d.status === "done" || d.status === "error";
+  $("state").textContent = d.paused && !fin ? "Paused — running videos finish first"
+    : (STATE[d.status] || d.status) + (d.status === "downloading" && d.total > 1 ? ` — ${d.done}/${d.total} done` : "");
+  $("pause").hidden = fin; $("pause").textContent = d.paused ? "▶ Resume" : "⏸ Pause"; $("pause").dataset.p = d.paused ? "1" : "";
+  $("sSpeed").textContent = fmtSpeed(d.speed);
+  $("sEta").textContent = d.status === "done" ? "0s" : fmtEta(d.eta);
+  $("sCount").textContent = d.total > 1 ? `${d.done}/${d.total}` + (d.failed ? ` (${d.failed}✗)` : "") : (d.status === "done" ? "1/1" : "1");
+  $("title").textContent = d.status === "done"
+    ? (d.nfiles === 1 ? `${d.files[0] ? d.files[0].name : ""} · ` : `${d.nfiles} files · `) + fmtSize(d.bytes)
+    : (d.title || d.label || "");
+
+  const multi = d.total > 1;                       // playlist: show ONLY the ZIP link(s)
+  $("flist").hidden = multi;
+  $("fhint").textContent = multi ? " — your ZIP download link appears when it is ready" : " — download while the rest continues";
+  if (d.files && d.files.length) {
+    $("files").hidden = false;
+    const ul = $("flist");
+    (multi ? [] : d.files).forEach(f => {
+      const li = document.createElement("li");
+      li.innerHTML = `<a href="/file/${job}/${f.i}" download title="${esc(f.name)}">${esc(f.name)}</a><span>${fmtSize(f.size)}</span>`;
+      ul.appendChild(li);
+    });
+    seen = d.since + d.files.length;
+    ul.scrollTop = ul.scrollHeight;
+  }
+  $("fcount").textContent = d.nfiles;
+  if (d.nfiles > 1 || fin) renderParts(d);
+  if (d.note) { $("note").hidden = false; $("note").textContent = d.note; }
+  if (d.failed_items && d.failed_items.length) {
+    $("failBox").hidden = false;
+    $("failSum").textContent = `Failed videos (${d.failed})`;
+    $("failList").innerHTML = d.failed_items.map(f => `<li>#${f.n} ${esc(f.title || "")} — ${esc(f.error)}</li>`).join("");
+  }
+  $("help").hidden = !d.bot_block;
+  if (d.bot_block) $("help").textContent = "YouTube is blocking this server's IP with a bot check. The server owner can fix this by adding cookies (YT_COOKIES_B64) or a proxy (PROXY_URL). Then press Retry.";
+  rememberJob(job, d.label);
+
+  if (fin && !finished) {
+    finished = true; stop();
+    $("cancel").hidden = true; $("pause").hidden = true; $("again").hidden = false;
+    $("retry").hidden = !(d.retryable > 0);
+    if (d.retryable > 0) $("retry").textContent = `↻ Retry ${d.retryable} unfinished`;
+    if (d.status === "done") {
+      setPct(100); $("prog").classList.add("done");
+      if (d.nfiles === 1) { $("save").hidden = false; $("save").href = d.total > 1 ? "/zip/" + job : "/file/" + job + "/0"; }
+      confetti();
+    } else {
+      $("prog").classList.add("err");
+      $("errMsg").hidden = false; $("errMsg").textContent = d.error || "Something went wrong.";
+    }
+  }
+}
+
+function begin(id) {
+  stop(); job = id; finished = false; target = shown = 0;
+  resetFiles();
+  $("prog").classList.remove("done","err"); $("errMsg").hidden = true;
+  $("save").hidden = true; $("again").hidden = true; $("retry").hidden = true; $("cancel").hidden = false; $("pause").hidden = false;
+  $("sSpeed").textContent = $("sEta").textContent = $("sCount").textContent = "—"; $("title").textContent = "";
+  setPct(0); showForm(false);
+  try { localStorage.setItem("job", id); } catch (e) {}
+  timer = setInterval(tick, 700); tick();
+}
+
+/* ---------- my downloads (kept in this browser, jobs live on the server) ---------- */
+function getJobs() { try { return JSON.parse(localStorage.getItem("jobs") || "[]"); } catch (e) { return []; } }
+function setJobs(a) { try { localStorage.setItem("jobs", JSON.stringify(a.slice(0, 20))); } catch (e) {} }
+function rememberJob(id, label) {
+  const a = getJobs(), i = a.findIndex(x => x.id === id);
+  if (i < 0) a.unshift({id, l: label || ""}); else if (label && a[i].l !== label) a[i].l = label; else return;
+  setJobs(a);
+}
+function forgetJob(id) { setJobs(getJobs().filter(x => x.id !== id)); try { if (localStorage.getItem("job") === id) localStorage.removeItem("job"); } catch (e) {} }
+async function loadMine() {
+  const a = getJobs(); if (!a.length) { $("mine").hidden = true; return; }
+  try {
+    const r = await fetch("/api/jobs?ids=" + a.map(x => x.id).join(",")); const d = await r.json();
+    const alive = new Set(d.jobs.map(x => x.id)); setJobs(a.filter(x => alive.has(x.id)));
+    $("mine").hidden = !d.jobs.length;
+    $("mineList").innerHTML = d.jobs.map(x => `<button type="button" data-id="${x.id}"><b>${esc(x.label || "Download")} · ${x.files} file(s)</b><span>${esc(x.status)}${x.status === "downloading" ? " " + Math.floor(x.percent) + "%" : ""}</span></button>`).join("");
+  } catch (e) {}
+}
+$("mineList").addEventListener("click", e => { const b = e.target.closest("button[data-id]"); if (b) begin(b.dataset.id); });
+
+/* ---------- start / preview ---------- */
+function bodyBase(url) {
+  return {
+    url, format: cur("fmt"), quality: cur("q"), playlist: $("zipall").checked, start: $("from").value, end: $("to").value,
+    embed: $("embed").checked, chapters: $("chapters").checked, subs: $("subs").checked ? $("subLang").value.trim() : ""
+  };
+}
+async function startJob(extra) {
+  const url = $("url").value.trim();
+  if (!url) { $("url").focus(); $("url").animate([{transform:"translateX(-8px)"},{transform:"translateX(8px)"},{transform:"none"}],{duration:260}); return; }
+  $("go").disabled = true;
+  try {
+    await ensureLogin();
+    const {r, d} = await api("/api/start", {json: Object.assign(bodyBase(url), extra || {})});
+    if (!r.ok) throw new Error(d.error || "Could not start.");
+    $("pv").hidden = true;
+    begin(d.job);
+  } catch (e) {
+    alert(e.message === "Failed to fetch" ? "Cannot reach the server." : e.message);
+  } finally { $("go").disabled = false; }
+}
+$("go").addEventListener("click", () => startJob());
+
+let pvIds = [];
+function pvCount() {
+  const n = document.querySelectorAll("#pvList input:checked").length;
+  $("pvCount").textContent = `${n} selected` + (MAX_PL && n > MAX_PL ? ` — only the first ${MAX_PL} will be downloaded` : "");
+  $("pvGo").disabled = !n;
+}
+$("preview").addEventListener("click", async () => {
+  const url = $("url").value.trim(); if (!url) { $("url").focus(); return; }
+  $("preview").disabled = true; $("preview").textContent = "Loading playlist…";
+  try {
+    await ensureLogin();
+    const {r, d} = await api("/api/preview", {json: {url}});
+    if (!r.ok) throw new Error(d.error || "Could not load the playlist.");
+    $("pvTitle").textContent = (d.title || "Playlist") + ` — ${d.entries.length} videos`;
+    $("pvList").innerHTML = d.entries.map(e =>
+      `<li><label><input type="checkbox" value="${esc(e.id)}" checked><span class="n">${e.n}</span><span class="t">${esc(e.title)}</span><span class="d">${fmtDur(e.dur)}</span></label></li>`).join("");
+    $("pv").hidden = false; pvCount();
+  } catch (e) { alert(e.message === "Failed to fetch" ? "Cannot reach the server." : e.message); }
+  finally { $("preview").disabled = false; $("preview").textContent = "🔍 Preview & choose videos"; }
+});
+$("pvList").addEventListener("change", pvCount);
+$("pvAll").addEventListener("click", () => { document.querySelectorAll("#pvList input").forEach(c => c.checked = true); pvCount(); });
+$("pvNone").addEventListener("click", () => { document.querySelectorAll("#pvList input").forEach(c => c.checked = false); pvCount(); });
+$("pvGo").addEventListener("click", () => startJob({playlist: true, start: "", end: "",
+  ids: [...document.querySelectorAll("#pvList input:checked")].map(c => c.value)}));
+
+/* ---------- job controls ---------- */
+$("pause").addEventListener("click", async () => {
+  if (!job) return;
+  await fetch("/api/" + ($("pause").dataset.p ? "resume/" : "pause/") + job, {method: "POST"}); tick();
+});
+$("cancel").addEventListener("click", () => { if (job) fetch("/api/cancel/" + job, {method: "POST"}); $("state").textContent = "Cancelling…"; });
+$("retry").addEventListener("click", async () => {
+  try {
+    const {r, d} = await api("/api/retry/" + job, {method: "POST"});
+    if (!r.ok) throw new Error(d.error || "Could not retry.");
+    finished = false; $("retry").hidden = true; $("again").hidden = true; $("cancel").hidden = false; $("pause").hidden = false;
+    $("prog").classList.remove("done","err"); $("errMsg").hidden = true; $("failBox").hidden = true; partsShown = 0;
+    target = Math.min(target, 99); timer = timer || setInterval(tick, 700); tick();
+  } catch (e) { alert(e.message); }
+});
+$("again").addEventListener("click", () => { stop(); try { localStorage.removeItem("job"); } catch (e) {} showForm(true); });
+
+/* reopen the page -> continue the running / finished job */
+(async function resume() {
+  let id = null; try { id = localStorage.getItem("job"); } catch (e) {}
+  if (!id) { loadMine(); return; }
+  try {
+    const r = await fetch("/api/progress/" + id + "?since=0");
+    if (r.ok) begin(id); else { forgetJob(id); loadMine(); }
+  } catch (e) {}
+})();
+</script>
+</body>
+</html>
